@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>FCC: Chloropleth Project</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #title {
+      font-size: xx-large;
+      text-align: center;
+    }
+
+    #description {
+      font-size: medium;
+      text-align: center;
+    }
+
+    #vis-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #tooltip {
+      background-color: darkslategray;
+      border-radius: 6px;
+      padding: 0.5em 0.75em;
+      color: white;
+      position: absolute;
+      font-size: small;
+    }
+  </style>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <script src="https://d3js.org/d3-geo.v1.min.js"></script>
+  <script src="https://unpkg.com/topojson@3"></script>
+</head>
+
+<body>
+  <script>
+    async function doThings() {
+      const EDUCATION_DATA_URL = "https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/for_user_education.json";
+      const COUNTY_DATA_URL = "https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/counties.json";
+      const FCC_SCRIPT_URL = "https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js";
+      let margin = { top: 30, right: 30, bottom: 30, left: 60 };
+      let width = 1050 - margin.left - margin.right;
+      let height = 700 - margin.top - margin.bottom;
+
+      /* color array from https://colorbrewer2.org/ */
+      let colorArray = ['#f7fcb9', '#d9f0a3', '#addd8e', '#78c679', '#41ab5d', '#238443', '#006837', '#004529'];
+      let colors = d3
+        .scaleLinear()
+        .domain(d3.range(5, 70, 65 / colorArray.length))
+        .range(colorArray)
+
+      /* Add container div */
+      d3.select("body")
+        .append("div")
+        .attr("id", "vis-container");
+
+      /* Title */
+      d3.select("#vis-container")
+        .append("div")
+        .attr("class", "title-block")
+        .append("div")
+        .attr("id", "title")
+        .text("United States Bachelor's Degree Dispersement");
+      d3.select(".title-block")
+        .append("div")
+        .attr("id", "description")
+        .text("Percentage of population with Bachelor's Degree or Higher");
+
+      /* Add svg */
+      let svg = d3.select("#vis-container")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+      /* Add tooltip */
+      let toolTip = d3.select("#vis-container")
+        .append("div")
+        .attr("id", "tooltip")
+        .style("opacity", 0);
+
+      /* Retrieve data */
+      let educationData = await d3.json(EDUCATION_DATA_URL).then((data, error) => {
+        if (error) throw error;
+        return data;
+      });
+
+      let usData = await d3.json(COUNTY_DATA_URL).then((data, error) => {
+        if (error) throw error;
+        return data;
+      });
+
+      /* Draw map of counties */
+      svg.append("g")
+        .selectAll("path")
+        .data(topojson.feature(usData, usData.objects.counties).features)
+        .enter()
+        .append("path")
+        .attr("fill", d => {
+          return colors(educationData.filter(item => {
+            return item.fips === d.id;
+          })[0].bachelorsOrHigher);
+        })
+        .attr("class", "county")
+        .attr("data-fips", d => {
+          return educationData.filter(item => {
+            return item.fips === d.id;
+          })[0].fips;
+        })
+        .attr("data-education", d => {
+          return educationData.filter(item => {
+            return item.fips === d.id;
+          })[0].bachelorsOrHigher;
+        })
+        .attr("d", d3.geoPath())
+        .on("mouseover", d => {
+          toolTip.transition().style("opacity", 0.9);
+          toolTip.html(() => {
+            let currentCounty = educationData.filter(item => {
+              return item.fips === d.id;
+            })[0];
+            return `${currentCounty.area_name}, ${currentCounty.state}:&nbsp;${currentCounty.bachelorsOrHigher}%`
+          })
+            .style("top", (d3.event.pageY - 15) + "px")
+            .style("left", (d3.event.pageX + 28) + "px")
+            .style("z-index", 5)
+            .attr("data-education", () => {
+              return educationData.filter(item => {
+                return item.fips === d.id;
+              })[0].bachelorsOrHigher;
+            })
+        })
+        .on("mouseout", d => {
+          toolTip.transition().style("opacity", 0).style("z-index", -1);
+        });
+
+      /* Add state borders overlay */
+      svg.append("path")
+        .datum(topojson.mesh(usData, usData.objects.states, (a, b) => { return a !== b; }))
+        .attr("class", "states")
+        .attr("stroke", "#555")
+        .attr("stroke-width", "1")
+        .attr("fill", "none")
+        .attr("d", d3.geoPath());
+
+      /* Add legend */
+      let legendContainer = svg.append("g")
+        .attr("id", "legend")
+        .attr("transform", `translate(${margin.left + (width * .55)}, ${margin.top})`);
+
+      let legendHeight = 7;
+      let legendWidth = 30;
+
+      let legend = legendContainer
+        .selectAll("#legend")
+        .data(colorArray)
+        .enter()
+        .append("rect")
+        .attr("class", "legend-label")
+        .attr("width", legendWidth + "px")
+        .attr("height", legendHeight + "px")
+        .style("fill", color => {
+          return color;
+        })
+        .attr("transform", (d, i) => {
+          return `translate(${i * legendWidth}, 0)`;
+        });
+
+      /* Add FCC Script */
+      d3.select("body")
+        .append("script")
+        .attr("src", FCC_SCRIPT_URL);
+    }
+    doThings();
+  </script>
+</body>
+
+</html>
